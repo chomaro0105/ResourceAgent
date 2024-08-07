@@ -15,7 +15,7 @@ public class AgentInfo {
     private List<InterfaceInfo> lldp;
     //cdp로 수집된 내용
     private List<InterfaceInfo> cdp;
-    private String ipList;
+    private List<String> ipList;
     private List<Processes> processes;
     private OsInfo osInfo;
     private Adapter adapter;

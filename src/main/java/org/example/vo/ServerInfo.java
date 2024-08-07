@@ -9,4 +9,5 @@ public class ServerInfo {
     private String mac;
     private String gateway;
     private String status;
+    private Boolean checkDefault = false;
 }

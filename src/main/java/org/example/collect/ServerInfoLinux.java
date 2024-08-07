@@ -1,13 +1,11 @@
 package org.example.collect;
 
-import org.example.util.StringUtil;
 import org.example.vo.*;
+import org.example.vo.network.DefaultNetworkInfo;
 
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Scanner;
 import java.util.regex.Matcher;
@@ -72,33 +70,18 @@ public class ServerInfoLinux implements ServerInfoOs {
     @Override
     public void runningResource(List<Resource> resourceData){
         try{
-            String cpuUsed = "";
-            String cpuCore = "";
-            String cpuClock = "";
-            String memory = "";
-            String disk = "";
-            String line = "";
-
-            cpuUsed = getCpu();
-            cpuCore = getCpuCore();
-            cpuClock = getCpuClock();
-            memory = getMemory();
-            disk = getDisk();
-
-            line = cpuUsed +","+ cpuCore +","+ cpuClock +","+ memory +","+ disk;
-
-            System.out.println("aaaaaaaaaaaaaa : "+cpuUsed+"//"+cpuCore+"//"+cpuClock+"//"+memory+"//"+disk);
-
-            resourceData.add(new Resource(line));
-
+            resourceData.add(new Resource(getCpu(), getCpuCore(), getCpuClock(), getMemory(), getDisk()));
         }catch(Exception e){
             e.printStackTrace();
             System.err.println(e.getMessage());
         }
     }
 
-    @Override
-    public void runningNetwork(List<RouteInfo> routeInfo) {
+    /**
+     * network 정보를 추출한다.
+     * @param defaultNetworkInfo
+     */
+    public void findDefaultNetwork(DefaultNetworkInfo defaultNetworkInfo) {
         try {
             Process process = new ProcessBuilder("netstat", "-rn").start();
             Scanner sc = new Scanner(process.getInputStream());
@@ -110,24 +93,23 @@ public class ServerInfoLinux implements ServerInfoOs {
                 line = line.trim();
 
                 if(exception == 2){
-                    String netIP = line.substring(0, line.indexOf(" "));
                     line = line.substring(line.indexOf(" "), line.length()).trim();
 
                     String gateway = line.substring(0, line.indexOf(" "));
                     line = line.substring(line.indexOf(" "), line.length()).trim();
-
-                    String genmask = line.substring(0, line.indexOf(" "));
                     line = line.substring(line.indexOf(" "), line.length()).trim();
 
                     String flags = line.substring(0, line.indexOf(" "));
-
-                    RouteInfo route = new RouteInfo();
-                    route.setIp(netIP);
-                    route.setNetmask(genmask);
-                    route.setGateway(gateway);
+                    line = line.substring(line.indexOf(" "), line.length()).trim();
+                    line = line.substring(line.indexOf(" "), line.length()).trim();
+                    line = line.substring(line.indexOf(" "), line.length()).trim();
+                    String iface = line.substring(line.indexOf(" "), line.length()).trim();
 
                     if(flags.equals("UG")){
-                        routeInfo.add(route);
+                        defaultNetworkInfo.setFlag("UG");
+                        defaultNetworkInfo.setInterf(iface);
+                        defaultNetworkInfo.setGateway(gateway);
+                        break;
                     }
                 }else{
                     exception++;
@@ -140,49 +122,94 @@ public class ServerInfoLinux implements ServerInfoOs {
             System.err.println(e.getMessage());
         }
 
-        Collections.sort(routeInfo, new Comparator<RouteInfo>() {
-            @Override
-            public int compare(RouteInfo a1, RouteInfo a2) {
-                return -(StringUtil.ipToInt(a1.getNetmask()) - StringUtil.ipToInt(a2.getNetmask()));
-            }
-        });
+//        Collections.sort(routeInfo, new Comparator<RouteInfo>() {
+//            @Override
+//            public int compare(RouteInfo a1, RouteInfo a2) {
+//                return -(StringUtil.ipToInt(a1.getNetmask()) - StringUtil.ipToInt(a2.getNetmask()));
+//            }
+//        });
     }
 
+    /**
+     * os정보를 추출한다.
+     * @param osInfo
+     */
     @Override
     public void runningOS(OsInfo osInfo) {
         try {
-            String name = "";
-            String vendor = "";
-            String model = "";
-
-            Process process = new ProcessBuilder("/bin/sh","-c","cat /etc/os-release | grep PRETTY_NAME").start();
+            String[] keyValue = new String[2];
+            Process process = new ProcessBuilder("/bin/sh","-c","cat /etc/os-release").start();
             Scanner sc = new Scanner(process.getInputStream());
             String line = "";
 
             while (sc.hasNextLine()) {
                 line = sc.nextLine();
-                name = line.split("=")[1].trim().replace("\"","");
+                keyValue = line.split("=");
+                if(keyValue[0].equalsIgnoreCase("NAME")){
+                    osInfo.setFull_name(keyValue[1].trim().replace("\"",""));
+                }else if(keyValue[0].equalsIgnoreCase("ID")){
+                    osInfo.setName(keyValue[1].trim().replace("\"",""));
+                }else if(keyValue[0].equalsIgnoreCase("VERSION_ID")){
+                    osInfo.setVersion(keyValue[1].trim().replace("\"",""));
+                }
             }
-
-            process = new ProcessBuilder("dmidecode","-s","system-manufacturer").start();
+//
+//            Process process = new ProcessBuilder("/bin/sh","-c","cat /etc/os-release | grep PRETTY_NAME").start();
+//            Scanner sc = new Scanner(process.getInputStream());
+//            String line = "";
+//
+//            while (sc.hasNextLine()) {
+//                line = sc.nextLine();
+//                name = line.split("=")[1].trim().replace("\"","");
+//                osInfo.setName(name);
+//            }
+//
+            process = new ProcessBuilder("/bin/sh","-c","id").start();
             sc = new Scanner(process.getInputStream());
+            String[] values = new String[1];        //첫번째 데이터만 필요하다.
+            boolean isRoot = false;
 
             while (sc.hasNextLine()) {
                 line = sc.nextLine();
-                vendor = line.trim();
+                values = line.split(" ");
+                keyValue = values[0].split("=");
+                if(keyValue[0].equalsIgnoreCase("uid")){
+                    if(keyValue[1].startsWith("0")){
+                        isRoot = true;
+                    }
+
+                    break;
+                }
             }
 
-            process = new ProcessBuilder("dmidecode","-s","system-product-name").start();
-            sc = new Scanner(process.getInputStream());
+            if(isRoot){
+                /**
+                 * 하드웨어 제조사 벤더
+                 * root 계정으로 실행해야만 가능하다.
+                 */
+                process = new ProcessBuilder("dmidecode","-s","system-manufacturer").start();
+                sc = new Scanner(process.getInputStream());
 
-            while (sc.hasNextLine()) {
-                line = sc.nextLine();
-                model = line.trim();
+                while (sc.hasNextLine()) {
+                    line = sc.nextLine();
+                    osInfo.setVendor(line.trim());
+                }
+
+                /**
+                 * 하드웨어 장비 모델명
+                 * root 계정으로 실행해야만 가능하다.
+                 */
+                process = new ProcessBuilder("dmidecode","-s","system-product-name").start();
+                sc = new Scanner(process.getInputStream());
+
+                while (sc.hasNextLine()) {
+                    line = sc.nextLine();
+                    osInfo.setModel(line.trim());
+                }
+            }else{
+                osInfo.setVendor("unKnow(is not root)");
+                osInfo.setModel("unKnow(is not root)");
             }
-
-            osInfo.setFull_name(name);
-            osInfo.setVendor(vendor);
-            osInfo.setModel(model);
 
             process.destroy();
             sc.close();
@@ -192,6 +219,11 @@ public class ServerInfoLinux implements ServerInfoOs {
         }
     }
 
+    /**
+     * ip별 gateway를 추출한다.
+     * @param ip
+     * @return
+     */
     public String getGatewayByIP(String ip){
         try{
             String gateway = null;
@@ -243,6 +275,10 @@ public class ServerInfoLinux implements ServerInfoOs {
         }
     }
 
+    /**
+     * Nic 정보를 수집한다.
+     * @param serverInfo
+     */
     @Override
     public void runningNic(List<ServerInfo> serverInfo) {
         /*
@@ -252,7 +288,6 @@ public class ServerInfoLinux implements ServerInfoOs {
         */
 
         try {
-            //ifconfig | awk '/^[^[:space:]]/{ interface=$1; print } $1=="inet" { print $2 } $1=="ether" { print $2 }'
             ProcessBuilder builder = new ProcessBuilder("bash", "-c", "ifconfig -a | awk '/^[^[:space:]]/{ interface=$1; print } $1==\"inet\" { print $1, $2 } $1==\"ether\" { print $1, $2 }'");
             //에러도 표준 출력으로 처리되서 서비스 지속가능하게하지만 그러기에 디버깅이 어려워진다..
             builder.redirectErrorStream(true);
@@ -271,13 +306,8 @@ public class ServerInfoLinux implements ServerInfoOs {
 
                 String[] interfaces = line.split(":");
                 if (interfaces[0].trim().equals("lo") || interfaces[0].trim().equals("tunl0")){
-                    line = reader.readLine();
-                    if(line.contains("inet")){
-//                        reader.readLine();
-                        continue;
-                    }
-                }
-                else {
+                    reader.readLine();
+                } else {
                     ifName = interfaces[0].trim();
                     String flags = interfaces[1].trim();
                     if (flags.contains("<UP,") || flags.contains(",UP,")) {
@@ -327,6 +357,10 @@ public class ServerInfoLinux implements ServerInfoOs {
         return agentInfo;
     }
 
+    /**
+     * cpu 사용량 수집
+     * @return
+     */
     public String getCpu()  {
         try {
             String line;
@@ -363,6 +397,10 @@ public class ServerInfoLinux implements ServerInfoOs {
         return null;
     }
 
+    /**
+     * cpu-core 수집
+     * @return
+     */
     public String getCpuCore() {
         String cpuCore = null;
 
@@ -391,6 +429,10 @@ public class ServerInfoLinux implements ServerInfoOs {
         return cpuCore;
     }
 
+    /**
+     * cpu-clock 수집
+     * @return
+     */
     public String getCpuClock(){
         String cpuClock = null;
 
@@ -406,8 +448,11 @@ public class ServerInfoLinux implements ServerInfoOs {
             String line;
             while ((line = reader.readLine()) != null) {
                 if (!line.isEmpty()){
+
                     cpuClock = line.replace("GHz","").trim();
-                    cpuClock = line.replace("MHz","").trim();
+                    if(cpuClock.length() < 1){
+                        cpuClock = line.replace("MHz","").trim();
+                    }
                 }
                 if (cpuClock != null){
                     break;
@@ -422,17 +467,19 @@ public class ServerInfoLinux implements ServerInfoOs {
         return cpuClock;
     }
 
+    /**
+     * Memory 사용량 수집
+     * @return
+     */
     public String getMemory(){
         try {
             String line = "";
             String memmory = "";
 
             /**
-             * 한글과 영어를 어떻게 구분할것인가...
+             * 영어로만 할 수 있는 방법은 없는가?
              */
-//            Process process = new ProcessBuilder("bash", "-c","free -b | awk '/^Mem:/ {print $2/1024/1024, $3/1024/1024}'").start();
-            Process process = new ProcessBuilder("bash", "-c","free -b | awk '/^메모리:/ {print $2/1024/1024, $3/1024/1024}'").start();
-//            Process process = new ProcessBuilder("bash", "-c","free --mega | awk '/^Mem:/ {print $2, $3}'").start();
+            Process process = new ProcessBuilder("bash", "-c","free -b | awk '/^메모리:/ {print $2/1024/1024, $3/1024/1024}' || '/^Mem:/ {print $2/1024/1024, $3/1024/1024}'").start();
             Scanner sc = new Scanner(process.getInputStream());
 
             while (sc.hasNextLine()) {

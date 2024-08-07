@@ -1,10 +1,12 @@
 package org.example.collect;
 
+import com.google.gson.Gson;
 import org.example.product.kafka.producer.Producer;
 import org.example.vo.*;
 import org.example.vo.network.Adapter;
 import org.example.vo.network.InterfaceInfo;
 import org.example.vo.network.Nic;
+import org.example.vo.network.DefaultNetworkInfo;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -12,6 +14,11 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 
+
+/**
+ * 실제 데이터를 수집하는 부분
+ * network, system 정보들을 모두 취합한다
+ */
 public class ResourceCollector {
 
     private static class SingleTon{
@@ -24,56 +31,45 @@ public class ResourceCollector {
 
     private AgentInfo agentInfo = new AgentInfo();
 
-    private List<RouteInfo> routeInfo = new ArrayList<RouteInfo>();
     private List<ServerInfo> serverInfo = new ArrayList();
-    private List<InterfaceInfo> interfaceInfo = new ArrayList();
-    private OsInfo osInfo = new OsInfo();
-    private String OS_NAME = "";
-    private String OS_VERSION = "";
-    private String OS_ARCH = "";
-    private String HOST_NAME = "";
-    private String DEFAULT_GATEWAY = "";
-    private String DEFAULT_IP = "";
-    private String DEFAULT_MAC = "";
 
+    private OsInfo osInfo = new OsInfo();
+
+//    private String osName = "";
+//    private String osVersion = "";
+//    private String osArch = "";
+    private String hostName = "";
     private List<String> gateways = new ArrayList<String>();
     private List<String> ifNames = new ArrayList();
     private List<String> ips = new ArrayList<String>();
     private List<String> macs = new ArrayList<String>();
+    private DefaultNetworkInfo defaultNetworkInfo = new DefaultNetworkInfo();
+
     private long total_memory = 0;
 
-    private int SLEEP_SECOND = 10;
+    private final int SLEEP_SECOND = 10;
 
     ServerInfoOs OS;
 
     public void init(ServerInfoOs serverInfoOs) {
         this.OS = serverInfoOs;
-        this.OS_NAME += "-"+getDistribution();
-
-        serverInfoLinux();
         running();
-
     }
 
-    public void collectData(){
-        this.OS.runningNetwork(this.routeInfo);
-        this.OS.runningNic(this.serverInfo);
-        this.OS.runningOS(this.osInfo);
-    }
-
+    /**
+     * 데이터를 수집하고 전송한다.
+     */
     public void running(){
         List<Processes> afterTopData = new ArrayList<Processes>();
         List<Processes> addTopData = new ArrayList<Processes>();
         List<Processes> deleteTopData = new ArrayList<Processes>();
         List<Resource> resourceData = new ArrayList<Resource>();
-
-        routeInfo = new ArrayList<RouteInfo>();
         serverInfo = new ArrayList();
 
         /**
          * 데이터 수집 시작
          */
-        collectData();
+//        collectData();
 
         //Process 정보
         this.OS.runningProcess(afterTopData, addTopData, deleteTopData, this.total_memory);
@@ -81,16 +77,38 @@ public class ResourceCollector {
         //Resource 정보
         this.OS.runningResource(resourceData);
 
+        //Network Nic 정보
+        this.OS.runningNic(this.serverInfo);
+
+        this.OS.findDefaultNetwork(this.defaultNetworkInfo);
+
+        //OS 정보
+        this.OS.runningOS(this.osInfo);
+
+        serverInfoLinux();
+
         //초기화 진행한 데이터들 다시 set
         this.agentInfo = getServerInfo();
 
+        /**
+         * kafka로 데이터를 전송한다.
+         */
+        Gson gson = new Gson();
         Producer producer = new Producer();
-        producer.running(this.agentInfo.toString());
+        producer.running(gson.toJson(this.agentInfo));
    }
 
+   public void findDefaultNetwork(){
+
+   }
+
+    /**
+     * OS가 Linux 일 경우 데이터를 수집하는 방법
+     */
     public void serverInfoLinux(){
         try {
 
+/*
             String main_ip ="";
 
             ProcessBuilder builder = new ProcessBuilder("bash", "-c", "ip addr show | grep 'inet ' | awk '{print $2}' | cut -d '/' -f1 | grep -v '127'");
@@ -108,15 +126,16 @@ public class ResourceCollector {
 
             reader.close();
             process.destroy();
+*/
 
             //serverInfo setting
-            serverInfo(main_ip);
+            serverInfo();
 
             //total memory
-            builder = new ProcessBuilder("bash", "-c", "free -m | awk '/Mem:/ {print $2}'\n");
+            ProcessBuilder builder = new ProcessBuilder("bash", "-c", "free -m | awk '/메모리:/ {print $2}' || '/Mem:/ {print $2}'\n");
             builder.redirectErrorStream(true);
-            process = builder.start();
-            reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            Process process = builder.start();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 
             String line2;
             while ((line2 = reader.readLine()) != null) {
@@ -133,12 +152,7 @@ public class ResourceCollector {
         }
     }
 
-    public void serverInfo(String main_ip){
-        /**
-         * Default ip,mac,gateway를 지정 하는 로직이 현재 버전 이슈로 인해 while문에서 첫번째로 나오는 ip기준으로 Default 지정중 => 추후에 좀 더 확실한 방식으로 지정 할 필요.
-         * 일단 OS별로 main ip 수집하여 처리하는것으로 진행
-         *
-         */
+    public void serverInfo(){
 
         try {
             for (ServerInfo info : this.serverInfo){
@@ -153,95 +167,55 @@ public class ResourceCollector {
                     this.macs.add(mac);
                     this.gateways.add(gateway);
 
-                    if (main_ip.equals(ip)){
-                        this.DEFAULT_IP = ip;
-                        this.DEFAULT_MAC = mac;
-                        this.DEFAULT_GATEWAY = gateway;
+                    if(this.defaultNetworkInfo.getInterf().equalsIgnoreCase(info.getInterfaceName())){
+                        info.setCheckDefault(true);
                     }
                 }
             }
 
             //host name
-            this.HOST_NAME = InetAddress.getLocalHost().getHostName();
+            this.hostName = InetAddress.getLocalHost().getHostName();
 
         } catch (Exception e) {
             System.err.println(e.getMessage());
         }
     }
 
+    /**
+     * 취합한 정보들을 AgentInfo에 담는 부분
+     * @return
+     */
     public AgentInfo getServerInfo() {
         AgentInfo agentInfo = new AgentInfo();
-        String ipList = "";
-        boolean first = true;
+        List<String> ipList = new ArrayList<>();
 
         //Bryan -> ipList의 ip들은 ips에서 가져오는가 or serverInfo에서 가져오는가
         for(int i=0; i<this.ips.size(); i++){
 
             String ip = this.ips.get(i);
-
-            if (first == true){
-                first = false;
-            }
-            else {
-                ipList += ",";
-            }
-
-            ipList += ip;
+            ipList.add(ip);
         }
 
-        agentInfo.setHost_name(this.HOST_NAME);
-
-        //ADAPTER
-        Adapter adapter = new Adapter();
-        adapter.setDefault_ip(this.DEFAULT_IP);
-        adapter.setDefault_mac(this.DEFAULT_MAC);
-        adapter.setDefault_gateway(this.DEFAULT_GATEWAY);
-        agentInfo.setAdapter(adapter);
+        for (ServerInfo info : this.serverInfo) {
+            if (info.getCheckDefault()) {
+                //ADAPTER
+                Adapter adapter = new Adapter();
+                adapter.setDefault_ip(info.getIp());
+                adapter.setDefault_mac(info.getMac());
+                adapter.setDefault_gateway(info.getGateway());
+                agentInfo.setAdapter(adapter);
+            }
+        }
 
         //NIC
         Nic nic = new Nic();
         nic.setServer_info(this.serverInfo);
-
-        nic.setDefaullt_ip(this.DEFAULT_IP);
-        nic.setDefault_mac(this.DEFAULT_MAC);
         agentInfo.setNic(nic);
 
         //IP List
         agentInfo.setIpList(ipList);
-
-        //os detail set
-        this.osInfo.setName(this.OS_NAME);
-        this.osInfo.setVersion(this.OS_VERSION);
-        this.osInfo.setArch(this.OS_ARCH);
-
         agentInfo.setOsInfo(this.osInfo);
 
         return agentInfo;
     }
-
-    public String getDistribution(){
-
-        try {
-            ProcessBuilder builder = new ProcessBuilder("bash", "-c", "grep '^ID=' /etc/os-release | cut -d '=' -f 2 | tr -d '\"'");
-            builder.redirectErrorStream(true);
-            Process process = builder.start();
-            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (!line.isEmpty()) {
-                    return line.trim();
-                }
-            }
-
-            reader.close();
-            process.destroy();
-
-        } catch (Exception e) {
-            System.err.println(e.getMessage());
-        }
-
-        return "";
-    }
-
 }
