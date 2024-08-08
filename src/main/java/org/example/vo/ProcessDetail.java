@@ -1,9 +1,6 @@
 package org.example.vo;
 
-import lombok.Data;
-
-@Data
-public class Processes {
+public class ProcessDetail {
     public String PID;
     public String PPID;         //200180531 Wade - PPID 추가
     public String USER_NAME;
@@ -17,15 +14,14 @@ public class Processes {
     private String MEM;
     private String TIME;
     private String NAME;          //COMMAND
-    public  int CHILD_COUNT;    //CHILDCOUNT  //200180531 Wade - CHILD_COUNT 추가
-    //bryan
+    public  int CHILD_COUNT;
     public String state_code;
 
     /**
      * LINUX
      * @param topData
      */
-    public Processes(String topData, String osType){
+    public ProcessDetail(String topData, String osType){
 
         this.USER_NAME = topData.substring(0, topData.indexOf(" "));
         topData = topData.substring(topData.indexOf(" "), topData.length()).trim();
@@ -72,7 +68,7 @@ public class Processes {
      * @param topData
      * @param total_memory
      */
-    public Processes(String[] topData, long total_memory){
+    public ProcessDetail(String[] topData, long total_memory){
         this.NAME       = topData[0];
         this.PID        = topData[1];
 
@@ -87,7 +83,7 @@ public class Processes {
         this.USER_NAME  = topData[6];
     }
 
-    public Processes(String topData, long total_memory){
+    public ProcessDetail(String topData, long total_memory){
 
         String pid = "";
         String name = "";

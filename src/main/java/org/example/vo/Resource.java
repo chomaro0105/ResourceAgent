@@ -4,6 +4,8 @@ import lombok.Data;
 
 @Data
 public class Resource {
+    private String eventDate;
+
     private String cpuUsed;
     private String cpuCore;
     private String cpuClock;
@@ -12,7 +14,9 @@ public class Resource {
     private String diskUsage;
     private String diskTotal;
 
-    public Resource(String cpuUsed, String cpuCore, String cpuClock, String memory, String disk){
+    public Resource(){}
+
+    public void setData(String cpuUsed, String cpuCore, String cpuClock, String memory, String disk){
         this.cpuUsed = cpuUsed;
         this.cpuCore = cpuCore;
         this.cpuClock = cpuClock;

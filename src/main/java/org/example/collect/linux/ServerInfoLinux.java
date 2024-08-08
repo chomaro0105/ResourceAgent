@@ -1,7 +1,9 @@
-package org.example.collect;
+package org.example.collect.linux;
 
 import org.example.vo.*;
+import org.example.vo.Process;
 import org.example.vo.network.DefaultNetworkInfo;
+import org.example.vo.network.Nic;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -13,23 +15,24 @@ import java.util.regex.Pattern;
 
 public class ServerInfoLinux implements ServerInfoOs {
 
+    /**
+     * Process 정보들을 수집하는 장소.
+     * 차후 Process 관리를 할수 있도록 한다.
+     * 새로이 추가 되는 부분만 선택해서 데이터를 전송 할 수 있거나, 특정 장비의 정보를 수집할 수 있다.
+     * @param top
+     */
     @Override
-    public void runningProcess(List<Processes> afterTopData, List<Processes> addTopData, List<Processes> deleteTopData, Long total_memory) {
+    public void runningProcess(List<ProcessDetail> top) {
         try{
-            //List<TopData> compareBeforeTopData = new ArrayList<TopData>();
-            //Map<String, Integer> idx = new HashMap<>();
-
             String line;
-            //Integer listIdx;
+
             int exceptionDataCount = 0; //list에 다른 값들이 존재해서 해당 값만큼 제외
-            //Process process = new ProcessBuilder("ps", "auxw").start();
-            //200180531 Wade - Command 변경
-            Process process = new ProcessBuilder("ps", "-eao", "user,pid,ppid,pcpu,pmem,stat,stime,time,command").start();
+            java.lang.Process process = new ProcessBuilder("ps", "-eao", "user,pid,ppid,pcpu,pmem,stat,stime,time,command").start();
             Scanner sc = new Scanner(process.getInputStream());
             while (sc.hasNextLine()) {
                 line = sc.nextLine().trim();
                 if(line.length() > 0 && exceptionDataCount == 1){
-                    afterTopData.add(new Processes(line, "linux"));
+                    top.add(new ProcessDetail(line, "linux"));
                 } else {
                     exceptionDataCount++;
                 }
@@ -37,29 +40,6 @@ public class ServerInfoLinux implements ServerInfoOs {
 
             sc.close();
             process.destroy();
-/*
-            PROCESS STATE CODES 프로세스 상태값
-            Here are the different values that the s, stat and state output specifiers (header "STAT" or "S") will display to describe the state
-            of a process:
-
-            D    uninterruptible sleep (usually IO)
-            R    running or runnable (on run queue)
-            S    interruptible sleep (waiting for an event to complete)
-            T    stopped by job control signal
-            t    stopped by debugger during the tracing
-            W    paging (not valid since the 2.6.xx kernel)
-            X    dead (should never be seen)
-            Z    defunct ("zombie") process, terminated but not reaped by its parent
-
-            For BSD formats and when the stat keyword is used, additional characters may be displayed:
-
-               <    high-priority (not nice to other users)
-            N    low-priority (nice to other users)
-            L    has pages locked into memory (for real-time and custom IO)
-            s    is a session leader
-            l    is multi-threaded (using CLONE_THREAD, like NPTL pthreads do)
-            +    is in the foreground process group
-*/
 
         }catch(Exception e){
             e.printStackTrace();
@@ -68,9 +48,9 @@ public class ServerInfoLinux implements ServerInfoOs {
     }
 
     @Override
-    public void runningResource(List<Resource> resourceData){
+    public void runningResource(Resource resourceData){
         try{
-            resourceData.add(new Resource(getCpu(), getCpuCore(), getCpuClock(), getMemory(), getDisk()));
+            resourceData.setData(getCpu(), getCpuCore(), getCpuClock(), getMemory(), getDisk());
         }catch(Exception e){
             e.printStackTrace();
             System.err.println(e.getMessage());
@@ -83,7 +63,7 @@ public class ServerInfoLinux implements ServerInfoOs {
      */
     public void findDefaultNetwork(DefaultNetworkInfo defaultNetworkInfo) {
         try {
-            Process process = new ProcessBuilder("netstat", "-rn").start();
+            java.lang.Process process = new ProcessBuilder("netstat", "-rn").start();
             Scanner sc = new Scanner(process.getInputStream());
             String line = "";
 
@@ -132,38 +112,28 @@ public class ServerInfoLinux implements ServerInfoOs {
 
     /**
      * os정보를 추출한다.
-     * @param osInfo
+     * @param os
      */
     @Override
-    public void runningOS(OsInfo osInfo) {
+    public void runningOS(Os os) {
         try {
             String[] keyValue = new String[2];
-            Process process = new ProcessBuilder("/bin/sh","-c","cat /etc/os-release").start();
+            java.lang.Process process = new ProcessBuilder("/bin/sh","-c","cat /etc/os-release").start();
             Scanner sc = new Scanner(process.getInputStream());
             String line = "";
 
             while (sc.hasNextLine()) {
                 line = sc.nextLine();
                 keyValue = line.split("=");
-                if(keyValue[0].equalsIgnoreCase("NAME")){
-                    osInfo.setFull_name(keyValue[1].trim().replace("\"",""));
+                if(keyValue[0].equalsIgnoreCase("PRETTY_NAME")){
+                    os.setFullName(keyValue[1].trim().replace("\"",""));
                 }else if(keyValue[0].equalsIgnoreCase("ID")){
-                    osInfo.setName(keyValue[1].trim().replace("\"",""));
+                    os.setName(keyValue[1].trim().replace("\"",""));
                 }else if(keyValue[0].equalsIgnoreCase("VERSION_ID")){
-                    osInfo.setVersion(keyValue[1].trim().replace("\"",""));
+                    os.setVersion(keyValue[1].trim().replace("\"",""));
                 }
             }
-//
-//            Process process = new ProcessBuilder("/bin/sh","-c","cat /etc/os-release | grep PRETTY_NAME").start();
-//            Scanner sc = new Scanner(process.getInputStream());
-//            String line = "";
-//
-//            while (sc.hasNextLine()) {
-//                line = sc.nextLine();
-//                name = line.split("=")[1].trim().replace("\"","");
-//                osInfo.setName(name);
-//            }
-//
+
             process = new ProcessBuilder("/bin/sh","-c","id").start();
             sc = new Scanner(process.getInputStream());
             String[] values = new String[1];        //첫번째 데이터만 필요하다.
@@ -192,7 +162,7 @@ public class ServerInfoLinux implements ServerInfoOs {
 
                 while (sc.hasNextLine()) {
                     line = sc.nextLine();
-                    osInfo.setVendor(line.trim());
+                    os.setVendor(line.trim());
                 }
 
                 /**
@@ -204,11 +174,11 @@ public class ServerInfoLinux implements ServerInfoOs {
 
                 while (sc.hasNextLine()) {
                     line = sc.nextLine();
-                    osInfo.setModel(line.trim());
+                    os.setModel(line.trim());
                 }
             }else{
-                osInfo.setVendor("unKnow(is not root)");
-                osInfo.setModel("unKnow(is not root)");
+                os.setVendor("unKnow(is not root)");
+                os.setModel("unKnow(is not root)");
             }
 
             process.destroy();
@@ -230,7 +200,7 @@ public class ServerInfoLinux implements ServerInfoOs {
 
             ProcessBuilder builder = new ProcessBuilder("bash", "-c", "netstat -rn | grep UG | awk '{print $1,$2}'");
             builder.redirectErrorStream(true);
-            Process process = builder.start();
+            java.lang.Process process = builder.start();
             BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 
             String line;
@@ -277,10 +247,10 @@ public class ServerInfoLinux implements ServerInfoOs {
 
     /**
      * Nic 정보를 수집한다.
-     * @param serverInfo
+     * @param nics
      */
     @Override
-    public void runningNic(List<ServerInfo> serverInfo) {
+    public void runningNic(List<Nic> nics) {
         /*
         NIC에 삽입될 데이터 수집 하는 메소드
         정보 : {[interface 이름, ip 주소, mac 주소, gateway],...} ServerInfo VO에 적용될 리스트만 추출하면됨
@@ -291,18 +261,18 @@ public class ServerInfoLinux implements ServerInfoOs {
             ProcessBuilder builder = new ProcessBuilder("bash", "-c", "ifconfig -a | awk '/^[^[:space:]]/{ interface=$1; print } $1==\"inet\" { print $1, $2 } $1==\"ether\" { print $1, $2 }'");
             //에러도 표준 출력으로 처리되서 서비스 지속가능하게하지만 그러기에 디버깅이 어려워진다..
             builder.redirectErrorStream(true);
-            Process process = builder.start();
+            java.lang.Process process = builder.start();
             BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 
             String line;
             while ((line = reader.readLine()) != null) {
-                ServerInfo server_info = new ServerInfo();
+                Nic nic = new Nic();
 
-                String ifName;
-                String ip = null;
-                String mac = null;
-                String gateway = null;
-                String status = null;
+                String ifName = "";
+                String ip = "";
+                String mac = "";
+                String gateway = "";
+                String status = "";
 
                 String[] interfaces = line.split(":");
                 if (interfaces[0].trim().equals("lo") || interfaces[0].trim().equals("tunl0")){
@@ -334,13 +304,12 @@ public class ServerInfoLinux implements ServerInfoOs {
                         gateway = getGatewayByIP(ip);
                     }
 
-                    server_info.setInterfaceName(ifName);
-                    server_info.setIp(ip);
-                    server_info.setMac(mac);
-                    server_info.setGateway(gateway);
-                    server_info.setStatus(status);
-
-                    serverInfo.add(server_info);
+                    nic.setInterfaceName(ifName);
+                    nic.setIp(ip);
+                    nic.setMac(mac);
+                    nic.setGateway(gateway);
+                    nic.setStatus(status);
+                    nics.add(nic);
                 }
             }
 
@@ -349,13 +318,53 @@ public class ServerInfoLinux implements ServerInfoOs {
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+        try {
+            java.lang.Process process = new ProcessBuilder("netstat", "-rn").start();
+            Scanner sc = new Scanner(process.getInputStream());
+            String line = "";
+
+            int exception = 0;
+            while (sc.hasNextLine()) {
+                line = sc.nextLine();
+                line = line.trim();
+
+                if(exception == 2){
+                    line = line.substring(line.indexOf(" "), line.length()).trim();
+                    line = line.substring(line.indexOf(" "), line.length()).trim();
+                    line = line.substring(line.indexOf(" "), line.length()).trim();
+
+                    String flags = line.substring(0, line.indexOf(" "));
+                    line = line.substring(line.indexOf(" "), line.length()).trim();
+                    line = line.substring(line.indexOf(" "), line.length()).trim();
+                    line = line.substring(line.indexOf(" "), line.length()).trim();
+                    String iface = line.substring(line.indexOf(" "), line.length()).trim();
+
+                    if(flags.equals("UG")){
+                        for(Nic nic : nics){
+                            if(nic.getInterfaceName().equalsIgnoreCase(iface)){
+                                nic.setCheckDefault(true);
+                            }
+                        }
+                        break;
+                    }
+                }else{
+                    exception++;
+                }
+            }
+
+            process.destroy();
+            sc.close();
+        }catch(Exception e){
+            System.err.println(e.getMessage());
+        }
     }
 
-    @Override
-    public AgentInfo makeSenderData(AgentInfo agentInfo, List<Processes> topData, List<Resource> resourceData, String type){
-        agentInfo.setProcesses(topData);
-        return agentInfo;
-    }
+//    @Override
+//    public AgentInfo makeSenderData(AgentInfo agentInfo, List<Processes> topData, List<Resource> resourceData, String type){
+//        agentInfo.setProcesses(topData);
+//        return agentInfo;
+//    }
 
     /**
      * cpu 사용량 수집
@@ -369,7 +378,7 @@ public class ServerInfoLinux implements ServerInfoOs {
             float cpu = 0;
             String cpuUsed = "";
 
-            Process process = new ProcessBuilder("top", "-d1", "-b", "-n2", "-p", "1").start();
+            java.lang.Process process = new ProcessBuilder("top", "-d1", "-b", "-n2", "-p", "1").start();
             Scanner sc = new Scanner(process.getInputStream());
 
             while (sc.hasNextLine()) {
@@ -408,7 +417,7 @@ public class ServerInfoLinux implements ServerInfoOs {
             ProcessBuilder builder = new ProcessBuilder("bash", "-c", "cat /proc/cpuinfo | grep processor | wc -l");
             //에러도 표준 출력으로 처리되서 서비스 지속가능하게하지만 그러기에 디버깅이 어려워진다..
             builder.redirectErrorStream(true);
-            Process process = builder.start();
+            java.lang.Process process = builder.start();
             BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 
             String line;
@@ -442,7 +451,7 @@ public class ServerInfoLinux implements ServerInfoOs {
             ProcessBuilder builder = new ProcessBuilder("bash", "-c", " grep -m 1 'cpu MHz' /proc/cpuinfo | awk '{print $4}'");
             //에러도 표준 출력으로 처리되서 서비스 지속가능하게하지만 그러기에 디버깅이 어려워진다..
             builder.redirectErrorStream(true);
-            Process process = builder.start();
+            java.lang.Process process = builder.start();
             BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 
             String line;
@@ -479,7 +488,7 @@ public class ServerInfoLinux implements ServerInfoOs {
             /**
              * 영어로만 할 수 있는 방법은 없는가?
              */
-            Process process = new ProcessBuilder("bash", "-c","free -b | awk '/^메모리:/ {print $2/1024/1024, $3/1024/1024}' || '/^Mem:/ {print $2/1024/1024, $3/1024/1024}'").start();
+            java.lang.Process process = new ProcessBuilder("bash", "-c","free -b | awk '/^메모리:/ {print $2/1024/1024, $3/1024/1024}' || '/^Mem:/ {print $2/1024/1024, $3/1024/1024}'").start();
             Scanner sc = new Scanner(process.getInputStream());
 
             while (sc.hasNextLine()) {
@@ -506,7 +515,7 @@ public class ServerInfoLinux implements ServerInfoOs {
             String diskTotal = "";
             String diskUsage = "";
 
-            Process process = new ProcessBuilder("bash", "-c","df -Bk | awk '{total += $2; used += $3} END {print total/1024, used/1024}'").start();
+            java.lang.Process process = new ProcessBuilder("bash", "-c","df -Bk | awk '{total += $2; used += $3} END {print total/1024, used/1024}'").start();
             Scanner sc = new Scanner(process.getInputStream());
 
             while (sc.hasNextLine()) {

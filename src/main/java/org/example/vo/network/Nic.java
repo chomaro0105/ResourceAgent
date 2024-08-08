@@ -1,11 +1,13 @@
 package org.example.vo.network;
 
 import lombok.Data;
-import org.example.vo.ServerInfo;
-
-import java.util.List;
 
 @Data
 public class Nic {
-    private List<ServerInfo> server_info;
+    private String interfaceName;
+    private String ip;
+    private String mac;
+    private String gateway;
+    private String status;
+    private Boolean checkDefault = false;
 }
